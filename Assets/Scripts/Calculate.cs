@@ -48,5 +48,4 @@ public class Calculate
         float decreased = current * (100 - percent) / 100f;
         return decreased;
     }
-
 }

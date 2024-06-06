@@ -18,9 +18,10 @@ public class PlayerPhysic : CharacterPhysic
     private Rigidbody _rb;
     private ConstantForce _constantForce;
     private InputControls _input;
-    private CapsuleCollider _capsuleCollider;
+    //private CapsuleCollider _capsuleCollider;
     public float slope;
     public Vector3 raycastOrigin;
+    private CharacterController _characterController;
     [SerializeField] public Transform leftFoot,rightFoot;
     #endregion
     #region get and set
@@ -29,10 +30,9 @@ public class PlayerPhysic : CharacterPhysic
     
     private void Awake()
     {
-
         _rb = GetComponent<Rigidbody>();
         _constantForce = GetComponent<ConstantForce>();
-        _capsuleCollider = GetComponent<CapsuleCollider>();
+        _characterController = GetComponent<CharacterController>();
         _input = new InputControls();
         _input.Player.Enable();
     }
@@ -40,16 +40,12 @@ public class PlayerPhysic : CharacterPhysic
     private void FixedUpdate()
     {
         //dont pull down character if is grounded
-        if(GroundCheck()){
-            //_rb.useGravity = false;
-            _constantForce.force = new Vector3(0,-1,0);
-        }
-        else{
-            //_rb.useGravity = true;
-            _constantForce.force = new Vector3(0,-20,0);
-        }
-
-        SetSlope();
+        // if(GroundCheck()){
+        //     _rb.isKinematic = true;
+        // }
+        // else{
+        //     _rb.isKinematic = false;
+        // }
 
         movementSlopeStatus = GetMovementSlopeStatus();
         
@@ -57,12 +53,6 @@ public class PlayerPhysic : CharacterPhysic
         #if UNITY_EDITOR
         DebugLogProcess();
         #endif
-    }
-
-    private void SetSlope(){
-        RaycastHit hit;
-        Physics.Raycast(_capsuleCollider.bounds.center + Vector3.up * 0.1f, Vector3.down, out hit, Mathf.Infinity, groundLayer);
-        slope = 1f - Vector3.Dot(transform.up, hit.normal);
     }
 
     #if UNITY_EDITOR
@@ -98,24 +88,28 @@ public class PlayerPhysic : CharacterPhysic
     }
 
     ///<summary>check is player on ground or not</summary>
-    public bool GroundCheck(){
+    public bool GroundCheck(float sensitivity = 0.3f){
         //is left foot on ground?
-        if(Physics.Raycast(leftFoot.position, Vector3.down, 0.3f, groundLayer)) return true;
+        //if(Physics.Raycast(leftFoot.position, Vector3.down, 0.3f, groundLayer)) return true;
         //is right foot on ground?
-        if(Physics.Raycast(rightFoot.position, Vector3.down, 0.3f, groundLayer)) return true;
-
-       // Calculate the origin of the raycast
-        raycastOrigin = _capsuleCollider.bounds.center - new Vector3(0, _capsuleCollider.height / 2f - _capsuleCollider.radius, 0);
+        //if(Physics.Raycast(rightFoot.position, Vector3.down, 0.3f, groundLayer)) return true;
         
         Vector3 raycastDirection = Vector3.down;
 
-        float raycastDistance = 0.5f;
+        float raycastDistance = 0.5f + sensitivity;
 
-        return Physics.Raycast(transform.position + Vector3.up * 0.1f, raycastDirection, raycastDistance, groundLayer);
+        return Physics.Raycast(transform.position + Vector3.up * 0.5f, raycastDirection, raycastDistance, groundLayer);
     }
 
     private void StopMoving(){
         _rb.velocity = Vector3.zero;
+    }
+
+    public void DisableCollider(){
+        _characterController.enabled = false;
+    }
+    public void EnableCollider(){
+        _characterController.enabled = true;
     }
 
     #if UNITY_EDITOR

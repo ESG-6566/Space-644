@@ -8,7 +8,7 @@ using System.Collections;
 using UnityEditor;
 #endif
 
-public class PlayerMovement : MonoBehaviour
+public class PlayerMovement : CharacterMovement
 {
     #if UNITY_EDITOR
     //assignments show or not
@@ -31,7 +31,7 @@ public class PlayerMovement : MonoBehaviour
     [Range(0.0f, 500f)] [SerializeField] public float walkSpeed = 50, sprintSpeed = 100, runSpeed = 200;
     [Range(0.0f, 100f)][SerializeField] private float _rotationSpeedReducerPercent = 10,
         _upwardSpeedReducerPercent = 10;
-    private bool _isSprinting = false;
+    
     [Range(0.0f, 100f)]
     [SerializeField] private float _rotationSmoothTime = 5;
     private float _turnSmoothVelocity;
@@ -40,7 +40,8 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private Animator _animator;
     public float targetAngle;
     public float angle;
-    [SerializeField] private bool _rotation;
+    [SerializeField] public bool rotation;
+    public bool isJumping;
     #endregion
     
     private void Awake()
@@ -54,6 +55,7 @@ public class PlayerMovement : MonoBehaviour
         _rb = GetComponent<Rigidbody>();
         _playerLook = GetComponent<PlayerLook>();
         _playerPhysic = GetComponent<PlayerPhysic>();
+        _animator = GetComponent<Animator>();
 
         jumpForce = minimumJumpForce;
 
@@ -109,7 +111,9 @@ public class PlayerMovement : MonoBehaviour
     /// </summary>
     
     private void CheckAndSetMovmentSpeed(){
-        if(_input.Player.Sprint.IsPressed()) _isSprinting = true;
+        if(_input.Player.Sprint.IsPressed()) moveingSpeedState = MoveingSpeedState.Sprint;
+        else moveingSpeedState = MoveingSpeedState.Run;
+
         
         float targetSpeed;
         float decreasePercent = 0;
@@ -118,7 +122,7 @@ public class PlayerMovement : MonoBehaviour
         if(_input.Player.Movment.IsPressed()) {
 
             //set move speed gradually to run or walk
-            if(_isSprinting) targetSpeed = sprintSpeed;
+            if(isSprinting) targetSpeed = sprintSpeed;
             else targetSpeed = runSpeed;
             
             // check for rotation
@@ -129,7 +133,7 @@ public class PlayerMovement : MonoBehaviour
         else {
             targetSpeed = 0f;
             decreasePercent = 0;
-            _isSprinting = false;
+            isSprinting = false;
         }
 
         // Apply decrease 
@@ -159,15 +163,18 @@ public class PlayerMovement : MonoBehaviour
         //Debug.Log("canceled");
         if(_playerPhysic.GroundCheck() && readForJump){
             //_rb.velocity = Vector3.up * _jumpForce * Time.fixedDeltaTime;
-            _rb.AddForce(Vector3.up * jumpForce* Time.fixedDeltaTime, ForceMode.Impulse);
+            //_rb.AddForce(Vector3.up * jumpForce* Time.fixedDeltaTime, ForceMode.Impulse);
             readForJump = false;
             jumpForce = minimumJumpForce;
 
-            //animation
-            //_animator.Play("Jump");
         }
         else jumpForce = minimumJumpForce;
+        if(_input.Player.Jump.IsPressed()){
+            //animation
+            _animator.SetTrigger("Jump");
+        }
     }
+    
 
     public void FirstPersonMove(){
         float targetAngle;
@@ -196,15 +203,15 @@ public class PlayerMovement : MonoBehaviour
             // Rotation
             targetAngle = Mathf.Atan2(_inputAxis.x,_inputAxis.y) * Mathf.Rad2Deg + _mainCamera.transform.eulerAngles.y;
             angle = Mathf.SmoothDampAngle(transform.eulerAngles.y, targetAngle, ref _turnSmoothVelocity, _rotationSmoothTime * Time.fixedDeltaTime);
-            if(_rotation) transform.rotation = Quaternion.Euler(0,angle,0);
+            if(rotation) {
+                transform.rotation = Quaternion.Euler(0,angle,0);
+            }
 
             // Move
             float speedAndTime = currentMoveSpeed * Time.fixedDeltaTime;
             Vector3 moveDirection = Quaternion.Euler(0.0f, targetAngle, 0.0f) * Vector3.forward;
-            //moveDirection.Normalize();
-            _rb.velocity = new Vector3(moveDirection.x * speedAndTime, _rb.velocity.y, moveDirection.z * speedAndTime);
+            //_rb.velocity = new Vector3(moveDirection.x * speedAndTime, _rb.velocity.y, moveDirection.z * speedAndTime);
         }
-        else _rb.velocity = Vector3.zero;
     }
 
     ///<summary>the diference between input angle and character angle</summary>
@@ -215,6 +222,21 @@ public class PlayerMovement : MonoBehaviour
         float difference = Mathf.Repeat(characterAngle - targetAngle + 180, 360) - 180;
 
         return difference;
+    }
+
+    public void StartJumping(){
+        isJumping = true;
+        rotation = false;
+    }
+    public void finishJumping(){
+        isJumping = false;
+        rotation = true;
+    }
+    public void EnableRotation(){
+        rotation = true;
+    }
+    public void DisableRotation(){
+        rotation = false;
     }
 
 	#if UNITY_EDITOR
@@ -262,7 +284,7 @@ public class PlayerMovement : MonoBehaviour
             EditorGUILayout.PropertyField(serializedObject.FindProperty(nameof(playerMovement._rotationSpeedReducerPercent)));
             EditorGUILayout.PropertyField(serializedObject.FindProperty(nameof(playerMovement._upwardSpeedReducerPercent)));
             EditorGUILayout.Space();
-            EditorGUILayout.PropertyField(serializedObject.FindProperty(nameof(playerMovement._rotation)));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty(nameof(playerMovement.rotation)));
 
             EditorGUILayout.Space();
 

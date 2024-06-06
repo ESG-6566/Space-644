@@ -5,15 +5,15 @@ using UnityEngine;
 public class CharacterAnimationController : MonoBehaviour
 {   
     public LayerMask groundLayer;
-    // Start is called before the first frame update
-    void Start()
-    {
-        
+    public bool isStateMirrorLock = false;
+    public bool isStateValueLock = false;
+    public InputControls _input;
+    [SerializeField] public Animator _animator;
+    public void Jump(){
+        if(_input.Player.Jump.IsPressed()){
+            //animation
+            _animator.SetBool("jump", true);
+        }else _animator.SetBool("jump", false);
     }
-
-    // Update is called once per frame
-    void Update()
-    {
-        
-    }
+    
 }

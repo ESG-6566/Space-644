@@ -7,6 +7,7 @@ using UnityEngine.UIElements;
 using Unity.Mathematics;
 using Unity.VisualScripting;
 using Mono.Cecil.Rocks;
+using UnityEngine.EventSystems;
 
 #if UNITY_EDITOR
 using UnityEditor;
@@ -20,13 +21,13 @@ public class PlayerAnimationContoller : CharacterAnimationController
         _rotateDirectionLog;
     #endif
     #region Assignment
-    [SerializeField] private Animator _animator;
+    
     [SerializeField] private PlayerMovement _playerMovment;
     [SerializeField] private PlayerPhysic _playerPhysic;
     [SerializeField] private PlayerLook _playerLook;
     private CapsuleCollider _capsuleCollider;
     private Rigidbody _rigidbody;
-    private InputControls _input;
+    
     //private new LayerMask groundLayer;
     #endregion
     private Vector2 _smootedrotateDirection, rotateDirection;
@@ -37,8 +38,8 @@ public class PlayerAnimationContoller : CharacterAnimationController
     private bool isLeftFootUp, isRightFootUp;
     #endregion
     #region  Procedurall animation variabels
-    private bool _leftFootisUp,_rightFootIsUp;
-    [Range(0.0f, 1f)] [SerializeField] private float _footIKWeight = 1;
+    private bool _leftFootisUp, _rightFootIsUp, _allowIK = true, _climbing = false;
+    [Range(0.0f, 1f)] [SerializeField] private float _footIKWeight = 1, _idleFootAndGroundOffset = 0.1f;
     [Range(0.0f, 20f)] [SerializeField] private float _footIKRotationSmootTime = 20f, _footIKPositionYAxisSmootTime, 
         _bodyIKSmootTime = 10f;
     [Range(0.0f, 1f)] [SerializeField] private float _slopeStepHight = 0.2f;
@@ -55,7 +56,6 @@ public class PlayerAnimationContoller : CharacterAnimationController
         _playerPhysic = GetComponent<PlayerPhysic>();
         _playerLook = GetComponent<PlayerLook>();
         _rigidbody = GetComponent<Rigidbody>();
-        _capsuleCollider = GetComponent<CapsuleCollider>();
 
         _input = new InputControls();
         _input.Player.Enable();
@@ -66,6 +66,7 @@ public class PlayerAnimationContoller : CharacterAnimationController
     private void FixedUpdate()
     {
         AnimatorProcess();
+        Jump();
 
         #if UNITY_EDITOR
         DebugLogProcess();
@@ -75,7 +76,7 @@ public class PlayerAnimationContoller : CharacterAnimationController
 
     private void AnimatorProcess(){
         float normalizedSpeed = Calculate.Normalize(0 , _playerMovment.sprintSpeed, _playerMovment.currentMoveSpeed);
-        _animator.SetFloat("speed",_playerMovment.currentMoveSpeed);
+
         //get difference of character and input in movment
         float angleDifference = _playerMovment.CharacterDirectionDifference();
         //calculate direction for blend tree
@@ -88,58 +89,67 @@ public class PlayerAnimationContoller : CharacterAnimationController
                 _animator.SetFloat("Velocity z",rotateDirection.y);        
                 break;
             case PlayerLook.CameraMode.ThirdPerson:
+                if(!isStateValueLock){
                     _animator.SetFloat("Velocity x",_smootedrotateDirection.y);
                     _animator.SetFloat("Velocity z",_smootedrotateDirection.x);
+                }
                 break;
         }
+
+        // Is rotating to left
+        if(!isStateMirrorLock){
+            if(_smootedrotateDirection.y < -0.25 ) _animator.SetBool("isRotatingToLeft", true);
+            else _animator.SetBool("isRotatingToLeft", false);
+        }
+
         //moving angle: geting from input
         if(IsMoving()) {
             _animator.SetBool("IsMoving",true);
-            DisableRootMotion();
-            _animator.SetBool("isRightFootUp", isRightFootUp);
+            if(!isStateMirrorLock) _animator.SetBool("isRightFootUp", isRightFootUp);
         } 
         else _animator.SetBool("IsMoving",false);
-            
-        //move speed
-        //_animator.SetFloat("speed",normalizedSpeed);
 
         //Jump
-        if(_playerPhysic.GroundCheck()) _animator.SetBool("IsGrounded",true); else {_animator.SetBool("IsGrounded",false);}
+        //if(_playerPhysic.GroundCheck()) _animator.SetBool("IsGrounded",true); else {_animator.SetBool("IsGrounded",false);}
 
         // Forward moving
         _animator.SetBool("IsMovingToForward",IsMovingToForward());
 
         // character front surface is upward or downward
-        float frontSurfaceHeight = _playerPhysic.FrontSurfaceHeight();
+        MovementSlopeStatus currentMoveSopeStatus = _playerPhysic.GetMovementSlopeStatus();
+        
         // downward
-        if(frontSurfaceHeight >= 0.1){
+        if(currentMoveSopeStatus == MovementSlopeStatus.Upward){
             _upwardValue =  Mathf.Lerp(_upwardValue, 2, (_bodyIKSmootTime + 1.5f)  * Time.fixedDeltaTime);
             _animator.SetFloat("upwardValue", _upwardValue);
+            _animator.SetBool("isUpwardMove", true);
         // upward
-        }else if(frontSurfaceHeight <= -0.1){
+        }else if(currentMoveSopeStatus == MovementSlopeStatus.Downward){
             _upwardValue =  Mathf.Lerp(_upwardValue, 0, (_bodyIKSmootTime + 1.5f) * Time.fixedDeltaTime);
             _animator.SetFloat("upwardValue", _upwardValue);
+            _animator.SetBool("isUpwardMove", false);
         }
         // Direct
         else {
             _upwardValue =  Mathf.Lerp(_upwardValue, 1, (_bodyIKSmootTime + 1.5f) * Time.fixedDeltaTime);
             _animator.SetFloat("upwardValue", _upwardValue);
+            _animator.SetBool("isUpwardMove", false);
         }
+
+        _animator.SetFloat("frontSurfaceHeight", _playerPhysic.frontSurface.y - transform.position.y);
     }
 
     public bool IsMoving(){
         return _input.Player.Movment.IsPressed();
     }
-    public void EnableRootMotion(){
-        _animator.applyRootMotion = true;
-    }
-    public void DisableRootMotion(){
-        _animator.applyRootMotion = false;
-    }
+    
 
+    /// <summary>
+    /// Sensitivity to rotation in motion
+    /// </summary>
     private bool IsMovingToForward(){
         float differnceAngle =  _playerMovment.CharacterDirectionDifference();
-        if(differnceAngle <= 60 && differnceAngle >= -60) return true;
+        if(differnceAngle <= 70 && differnceAngle >= -70) return true;
         else return false;
     }
 
@@ -161,42 +171,50 @@ public class PlayerAnimationContoller : CharacterAnimationController
         else return false;
     }
 
-    public void IsLeftFootUp(){
-        isLeftFootUp = true;
-        isRightFootUp = false;
-    }
-    public void IsRightFootUp(){
-        isRightFootUp = true;
-        isLeftFootUp = false;
-    }
+    
 
-    private void OnAnimatorIK(int layerIndex)
-    {
-       if (_animator != null && _playerPhysic.GroundCheck())
-        {
-            WhichFootIsAhead();
-
-            SetBodyDistanceFromGround();
-
-            // Set the position and rotation of the left foot
-            SetFootIK(AvatarIKGoal.LeftFoot);
-            
-            // Set the position and rotation of the right foot
-            SetFootIK(AvatarIKGoal.RightFoot);
-        }
-    }
-
-    void OnAnimatorMove()
-    {
+    private void OnAnimatorIK(int layerIndex){
         if (_animator != null)
         {
-            if(_animator.applyRootMotion){
-                _rigidbody.velocity = _animator.velocity;
-                _rigidbody.AddForce(Physics.gravity * _rigidbody.mass);
+            if(_animator.applyRootMotion && _playerMovment.isJumping){
+                //  Adjust Velocity To Surface Angle
+                //_rigidbody.velocity = _animator.velocity;
             }
+            if(!_playerMovment.isJumping){
+                WhichFootIsAhead();
+            }
+            
+            if(_allowIK){
+                // Set the position and rotation of the left foot
+                SetFootIK(AvatarIKGoal.LeftFoot);
+                
+                // Set the position and rotation of the right foot
+                SetFootIK(AvatarIKGoal.RightFoot);
+
+            }
+            
+            SetBodyDistanceFromGround();
         }
+
     }
 
+    // void OnAnimatorMove()
+    // {
+    //     if (_animator != null && _animator.applyRootMotion)
+    //     {
+            
+    //         AdjustVelocityToSurfaceAngle();
+    //     }
+    // }
+
+    private void AdjustVelocityToSurfaceAngle(){
+        float frontSurfaceAngle = _playerPhysic.FrontSurfaceAngle(0.5f);
+
+            Vector3 newVelocityDirection = Quaternion.AngleAxis(frontSurfaceAngle, Vector3.forward) * _animator.velocity;
+            // Vector3 moveDirection = _animator.velocity;
+
+            _rigidbody.velocity = newVelocityDirection;
+    }
     private void SetFootIK(AvatarIKGoal foot)
     {
         Vector3 footPosition = _animator.GetIKPosition(foot);
@@ -210,19 +228,28 @@ public class PlayerAnimationContoller : CharacterAnimationController
         RaycastHit groundHit;
         if (Physics.Raycast(footPosition + Vector3.up * 0.5f, Vector3.down, out groundHit, Mathf.Infinity, groundLayer))
         {
-            float yAxisDifference = groundHit.point.y - ballanceYaxis;
+            float yAxisDifference;
+            // Apply Y axis if character is on ground
+            if(_playerPhysic.GroundCheck(0.3f)){
+                yAxisDifference = groundHit.point.y - ballanceYaxis;
+            }
+            else{
+                yAxisDifference = 0;
+            }
             Vector3 correctedPosition;
-
+            
             //Calculate the foot rotation based on the ground normal
             Quaternion groundHitRotation = Quaternion.LookRotation(Vector3.Cross(transform.right, groundHit.normal), groundHit.normal);
             Quaternion corecctedRotation;
             Quaternion nextRotation;
             float nextYAxis;
+
             // Left foot
             if(foot == AvatarIKGoal.LeftFoot){
                 nextYAxis = Mathf.Lerp(_lastLeftFootPositionYAxis, yAxisDifference, _footIKPositionYAxisSmootTime * Time.fixedDeltaTime);
                 correctedPosition = footPosition + Vector3.up * nextYAxis;
                 _lastLeftFootPositionYAxis = nextYAxis;
+
                 
                 // Calculate the rotation to align with the ground normal
                 corecctedRotation = FootAndGroundRotation(footRotation,groundHitRotation);
@@ -247,14 +274,24 @@ public class PlayerAnimationContoller : CharacterAnimationController
             Vector3 hintPosition = _animator.GetIKHintPosition(hint);
             Vector3 correctedHintPosition = hintPosition + Vector3.up * yAxisDifference;
 
+            // Foot distance to ground
+            float distanceToGround = Vector3.Distance(groundHit.point, correctedPosition);
+            // apply offset
+            distanceToGround -= _idleFootAndGroundOffset;
+
             // Set the foot IK position and rotation
             _animator.SetIKPosition(foot, correctedPosition);
-            _animator.SetIKHintPosition(hint, correctedHintPosition);
             _animator.SetIKRotation(foot, nextRotation);
+            _animator.SetIKHintPosition(hint, correctedHintPosition);
             
-            _animator.SetIKPositionWeight(foot, 1f);
-            _animator.SetIKHintPositionWeight(hint, 1f);
-            _animator.SetIKRotationWeight(foot, 1f);
+            //if(_playerPhysic.GroundCheck(0.3f)){
+                _animator.SetIKPositionWeight(foot, 1f);
+                _animator.SetIKRotationWeight(foot, 1f - distanceToGround);
+                _animator.SetIKHintPositionWeight(hint, 1f);
+            //}
+            // _animator.SetIKPositionWeight(foot, 1f);
+            // _animator.SetIKRotationWeight(foot, 1f - distanceToGround);
+            // _animator.SetIKHintPositionWeight(hint, 1f);
         }
     }
 
@@ -285,10 +322,16 @@ public class PlayerAnimationContoller : CharacterAnimationController
         else currentSmootTime = _bodyIKSmootTime;
         // set distance
         RaycastHit groundHit;
-        if(Physics.Raycast(transform.position + Vector3.up * 0.5f, Vector3.down, out groundHit, Mathf.Infinity, groundLayer)){
+        if(_climbing){
+            float yOffset = _playerPhysic.frontSurface.y - 0.8f;
+            _animator.bodyPosition += Vector3.up * yOffset;
+        }
+        // In normal move
+        else if(Physics.Raycast(transform.position + Vector3.up * 0.5f, Vector3.down, out groundHit, Mathf.Infinity, groundLayer)){
             float difference = groundHit.point.y - transform.position.y;
             float nexYAxis = Mathf.Lerp(_lastBodyPositionYAxis, difference, currentSmootTime * Time.fixedDeltaTime);
             _animator.bodyPosition += Vector3.up * nexYAxis;
+            if(_playerPhysic.GroundCheck(0.3f))
             _lastBodyPositionYAxis = nexYAxis;
         }
     }
@@ -313,13 +356,45 @@ public class PlayerAnimationContoller : CharacterAnimationController
         }
     }
 
+    #region Animation call functions
+    public void StartClimbing(){
+        _playerPhysic.DisableCollider();
+        _playerMovment.rotation = false;
+        _allowIK = false;
+        _climbing = true;
+    }
+    public void EndClimbing(){
+        _playerPhysic.EnableCollider();
+        _playerMovment.rotation = true;
+        _allowIK = true;
+        _climbing = false;
+    }
+
+    public void IsLeftFootUp(){
+        isLeftFootUp = true;
+        isRightFootUp = false;
+    }
+    public void IsRightFootUp(){
+        isRightFootUp = true;
+        isLeftFootUp = false;
+    }
+
+    public void EnableRootMotion(){
+        _animator.applyRootMotion = true;
+    }
+    public void DisableRootMotion(){
+        _animator.applyRootMotion = false;
+    }
+    #endregion
+
     void OnDrawGizmos(){
         //Vector3 frontPoint = transform.position + transform.forward * frontOffset;
         
         // RaycastHit bodyHit;
         // if (Physics.Raycast(transform.position + Vector3.up * 0.5f , Vector3.down, out bodyHit, Mathf.Infinity, groundLayer));
-        // Gizmos.DrawSphere(bodyHit.point, 0.1f);
-        // Debug.Log(bodyHit.point.y);
+        Gizmos.DrawSphere(_playerPhysic.frontSurface, 0.1f);
+        //Debug.Log(_playerPhysic.frontSurface.y - transform.position.y);
+
     }
 
     #if UNITY_EDITOR
@@ -373,6 +448,7 @@ public class PlayerAnimationContoller : CharacterAnimationController
                 EditorGUILayout.PropertyField(serializedObject.FindProperty(nameof(playerAnimationContoller._footIKPositionYAxisSmootTime)));
                 EditorGUILayout.PropertyField(serializedObject.FindProperty(nameof(playerAnimationContoller._bodyIKSmootTime)));
                 EditorGUILayout.PropertyField(serializedObject.FindProperty(nameof(playerAnimationContoller._footIKRotation)));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty(nameof(playerAnimationContoller._idleFootAndGroundOffset)));
                 EditorGUILayout.Space();
                 EditorGUILayout.PropertyField(serializedObject.FindProperty(nameof(playerAnimationContoller._leftToes)));
                 EditorGUILayout.PropertyField(serializedObject.FindProperty(nameof(playerAnimationContoller._rightToes)));
